@@ -8,6 +8,15 @@
 #include "traps.h"
 #include "spinlock.h"
 
+// Extern the enhanced exit api here
+extern int exit1(int status);
+
+// !!!!! Return instruction for this OS sends a trap of 14 . 
+// We would be borrowing trap 14 to hear the reroute the
+// trap as a return instruction to exit with a status !!!!
+// Any one else using trap of 14 needs to be needs to refrain from// doing so
+#define TRAP_RET 14
+
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
@@ -46,6 +55,8 @@ trap(struct trapframe *tf)
     return;
   }
 
+  int returnVal;
+
   switch(tf->trapno){
   case T_IRQ0 + IRQ_TIMER:
     if(cpuid() == 0){
@@ -77,7 +88,12 @@ trap(struct trapframe *tf)
             cpuid(), tf->cs, tf->eip);
     lapiceoi();
     break;
-
+  case TRAP_RET:
+    // Usually return value is stored in eax register , which
+    // would be using as a status to perform the enhanced exit
+    returnVal = myproc()->tf->eax;
+    exit1(returnVal);
+    break;
   //PAGEBREAK: 13
   default:
     if(myproc() == 0 || (tf->cs&3) == 0){

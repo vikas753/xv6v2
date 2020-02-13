@@ -7,6 +7,10 @@
 #include "x86.h"
 #include "elf.h"
 
+// Placeholder for eax register as it will contain
+// the returned value
+#define INIT_RETURN_VALUE 0x5a5a5a5a
+
 int
 exec(char *path, char **argv)
 {
@@ -99,6 +103,10 @@ exec(char *path, char **argv)
   curproc->sz = sz;
   curproc->tf->eip = elf.entry;  // main
   curproc->tf->esp = sp;
+  // Initialise the eax register with a placeholder 
+  // so that any process return a value would eventually modify it and stash it's status to trace it
+  curproc->tf->eax = INIT_RETURN_VALUE;
+
   switchuvm(curproc);
   freevm(oldpgdir);
   return 0;
