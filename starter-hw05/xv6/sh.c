@@ -5,11 +5,13 @@
 #include "fcntl.h"
 
 // Parsed command representation
-#define EXEC  1
-#define REDIR 2
-#define PIPE  3
-#define LIST  4
-#define BACK  5
+#define EXEC       1
+#define REDIR      2
+#define PIPE       3
+#define LIST       4
+#define BACK       5
+#define LIST_ANDOP 6
+#define LIST_OROP  7
 
 #define MAXARGS 10
 
@@ -64,6 +66,8 @@ runcmd(struct cmd *cmd)
   struct pipecmd *pcmd;
   struct redircmd *rcmd;
 
+  int exitStatus;
+    
   if(cmd == 0)
     exit();
 
@@ -95,6 +99,53 @@ runcmd(struct cmd *cmd)
       runcmd(lcmd->left);
     wait();
     runcmd(lcmd->right);
+    break;
+
+// && operator case where p2 should be fired
+// when p1 succeeds ( for p1 && p2 ) 
+// Assumption here is that none of processes
+// are in action apart from them from
+// this parent ( as per code it is unlikely 
+// for this case ) 
+ case LIST_ANDOP:
+    lcmd = (struct listcmd*)cmd;
+    if(fork1() == 0)
+      runcmd(lcmd->left);
+// Waitl , will fill up the exit status of active child 
+// from this parent or process and below we would check
+// for exit code to be zero . 
+    wait1((int*)&exitStatus);
+    printf(1,"");
+    if(exitStatus == 0)
+    {
+      runcmd(lcmd->right);
+    }
+    else
+    {
+      exit1(1);
+    }
+    break;
+
+// || operator case where p2 should be fired
+// when p1 fails ( for p1 && p2 ) 
+// Assumption here is that none of processes
+// are in action apart from them from
+// this parent ( as per code it is unlikely 
+// for this case ) 
+ case LIST_OROP:
+    lcmd = (struct listcmd*)cmd;
+    if(fork1() == 0)
+      runcmd(lcmd->left);
+// wait will fill up the exit code , if it fails
+// then proceed as below 
+    wait1((int*)&exitStatus);
+    if(exitStatus != 0)
+    {
+      runcmd(lcmd->right);
+    }
+    else
+    {
+      panic(" Zero exit from child p1 for OR operator ");       }
     break;
 
   case PIPE:
@@ -294,6 +345,35 @@ listcmd(struct cmd *left, struct cmd *right)
 }
 
 struct cmd*
+listcmd_andop(struct cmd *left, struct cmd *right)
+{
+  struct listcmd *cmd;
+
+  cmd = malloc(sizeof(*cmd));
+  memset(cmd, 0, sizeof(*cmd));
+  cmd->type = LIST_ANDOP;
+  cmd->left = left;
+  cmd->right = right;
+  return (struct cmd*)cmd;
+}
+
+struct cmd*
+listcmd_orop(struct cmd *left, struct cmd *right)
+{
+  struct listcmd *cmd;
+
+  cmd = malloc(sizeof(*cmd));
+  memset(cmd, 0, sizeof(*cmd));
+  cmd->type = LIST_OROP;
+  cmd->left = left;
+  cmd->right = right;
+  return (struct cmd*)cmd;
+}
+
+
+
+
+struct cmd*
 backcmd(struct cmd *subcmd)
 {
   struct backcmd *cmd;
@@ -310,6 +390,9 @@ backcmd(struct cmd *subcmd)
 char whitespace[] = " \t\r\n\v";
 char symbols[] = "<|>&;()";
 
+#define RET_AND 0x5a
+#define RET_OR  0x5b
+
 int
 gettoken(char **ps, char *es, char **q, char **eq)
 {
@@ -325,13 +408,27 @@ gettoken(char **ps, char *es, char **q, char **eq)
   switch(*s){
   case 0:
     break;
-  case '|':
   case '(':
   case ')':
   case ';':
-  case '&':
   case '<':
     s++;
+    break;
+  case '|':
+    s++;
+    if(*s == '|')
+    {
+      ret = RET_OR;
+      s++;      
+    }
+    break;
+  case '&':
+    s++;
+    if(*s == '&')
+    {
+      ret = RET_AND;
+      s++;      
+    }
     break;
   case '>':
     s++;
@@ -395,10 +492,23 @@ parseline(char **ps, char *es)
   struct cmd *cmd;
 
   cmd = parsepipe(ps, es);
-  while(peek(ps, es, "&")){
-    gettoken(ps, es, 0, 0);
-    cmd = backcmd(cmd);
+
+  if(peek(ps, es, "&"))
+  {
+    if(gettoken(ps, es, 0, 0) == RET_AND)
+    {
+      cmd = listcmd_andop(cmd, parseline(ps, es));
+    }
+    else
+    {
+      do
+      {
+        gettoken(ps, es, 0, 0);
+        cmd = backcmd(cmd);
+      } while(peek(ps,es,"&"));    
+    }
   }
+
   if(peek(ps, es, ";")){
     gettoken(ps, es, 0, 0);
     cmd = listcmd(cmd, parseline(ps, es));
@@ -413,8 +523,14 @@ parsepipe(char **ps, char *es)
 
   cmd = parseexec(ps, es);
   if(peek(ps, es, "|")){
-    gettoken(ps, es, 0, 0);
-    cmd = pipecmd(cmd, parsepipe(ps, es));
+    if(gettoken(ps, es, 0, 0) == RET_OR)
+    {
+      cmd = listcmd_orop(cmd, parseline(ps, es));	    
+    }
+    else
+    {
+      cmd = pipecmd(cmd, parsepipe(ps, es));
+    }
   }
   return cmd;
 }
@@ -527,6 +643,8 @@ nulterminate(struct cmd *cmd)
     break;
 
   case LIST:
+  case LIST_ANDOP:
+  case LIST_OROP:
     lcmd = (struct listcmd*)cmd;
     nulterminate(lcmd->left);
     nulterminate(lcmd->right);
@@ -536,6 +654,11 @@ nulterminate(struct cmd *cmd)
     bcmd = (struct backcmd*)cmd;
     nulterminate(bcmd->cmd);
     break;
+   
+  //default:
+    // do nothing
   }
+
+
   return cmd;
 }
