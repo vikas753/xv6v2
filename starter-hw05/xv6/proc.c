@@ -395,8 +395,6 @@ wait1(int *status)
         p->killed = 0;
         p->state = UNUSED;
         release(&ptable.lock);
-	printf(1,"Name : %s\n",p->name);
-	printf(1,"eStatus : %d\n" , p->exitStatus);
 	*status = p->exitStatus;
         return pid;
       }

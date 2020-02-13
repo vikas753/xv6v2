@@ -113,9 +113,9 @@ runcmd(struct cmd *cmd)
       runcmd(lcmd->left);
 // Waitl , will fill up the exit status of active child 
 // from this parent or process and below we would check
-// for exit code to be zero . 
+// for exit code to be zero . Failure would be slapped
+// with exit1(1) 
     wait1((int*)&exitStatus);
-    printf(1,"");
     if(exitStatus == 0)
     {
       runcmd(lcmd->right);
@@ -137,7 +137,7 @@ runcmd(struct cmd *cmd)
     if(fork1() == 0)
       runcmd(lcmd->left);
 // wait will fill up the exit code , if it fails
-// then proceed as below 
+// then proceed as below , for failure slap it with exit1(1) 
     wait1((int*)&exitStatus);
     if(exitStatus != 0)
     {
@@ -145,7 +145,8 @@ runcmd(struct cmd *cmd)
     }
     else
     {
-      panic(" Zero exit from child p1 for OR operator ");       }
+      exit1(1);
+    }
     break;
 
   case PIPE:
@@ -222,7 +223,10 @@ main(int argc, char *argv[])
     // not , below 
     if(fd > 0)
     {
+      int exitStatus = 0;	    
       // Read and run input commands from a sh file
+      // below code is propogated as is from the normal
+      // commands file
       while(getcmd_sh_file(buf, sizeof(buf),fd) >= 0){
         if(buf[0] == 'c' && buf[1] == 'd' && buf[2] == ' '){
           // Chdir must be called by the parent, not the child.
@@ -233,9 +237,12 @@ main(int argc, char *argv[])
         }
         if(fork1() == 0)
           runcmd(parsecmd(buf));
-        wait();
+        // Enhanced wait call that would store the status 
+	// as well in the pointer variable
+        wait1((int*)&exitStatus);
       }
-      exit1(0);
+      // Exit using above status that we get from child process
+      exit1(exitStatus);
     } 
     else
     {
