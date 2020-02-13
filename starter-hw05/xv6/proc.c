@@ -263,7 +263,13 @@ exit(void)
         wakeup1(initproc);
     }
   }
-
+  
+  // Modify the exit status of parent and hardcode it to
+  // zero so that enhanced wait1 call would eventually
+  // get the status of backward compatible child with 
+  // exit call
+  curproc->exitStatus = 0;
+  
   // Jump into the scheduler, never to return.
   curproc->state = ZOMBIE;
   sched();

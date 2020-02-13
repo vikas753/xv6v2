@@ -66,7 +66,12 @@ runcmd(struct cmd *cmd)
   struct pipecmd *pcmd;
   struct redircmd *rcmd;
 
-  int exitStatus;
+  // Store the status when program as exited and propogate
+  // to status later , two more copies to store statuses of 
+  // multiple programs
+  int exitStatus = 0;
+  int exitStatusOne = 0;
+  int exitStatusTwo = 0;
     
   if(cmd == 0)
     exit();
@@ -120,10 +125,6 @@ runcmd(struct cmd *cmd)
     {
       runcmd(lcmd->right);
     }
-    else
-    {
-      exit1(1);
-    }
     break;
 
 // || operator case where p2 should be fired
@@ -142,10 +143,6 @@ runcmd(struct cmd *cmd)
     if(exitStatus != 0)
     {
       runcmd(lcmd->right);
-    }
-    else
-    {
-      exit1(1);
     }
     break;
 
@@ -169,8 +166,9 @@ runcmd(struct cmd *cmd)
     }
     close(p[0]);
     close(p[1]);
-    wait();
-    wait();
+    wait1((int*)&exitStatusOne);
+    wait1((int*)&exitStatusTwo);
+    exitStatus = (exitStatusOne | exitStatusTwo);
     break;
 
   case BACK:
@@ -179,7 +177,19 @@ runcmd(struct cmd *cmd)
       runcmd(bcmd->cmd);
     break;
   }
-  exit();
+  // Check for exit status here , if it is zero
+  // then process is using old api or maybe signalling
+  // status to be zero in both cases older api call
+  // would be sufficient . If it is not zero then use the newer
+  // exit api to signal the exit status onto upper chains
+  if(exitStatus == 0)
+  {
+    exit();
+  }
+  else
+  {
+    exit1(1);	  
+  }
 }
 
 int
